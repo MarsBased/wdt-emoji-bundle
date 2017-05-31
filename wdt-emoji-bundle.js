@@ -22,6 +22,8 @@
     pickerColors : ['green', 'pink', 'yellow', 'blue', 'gray'],
     textMode     : true,
     disabledCategories: ['Skin Tones'],
+    iconOpenedHTML: '<i class="fa fa-smile-o"></i>',
+    iconClosedHTML: '<i class="fa fa-times"></i>',
     sectionOrders: {
       'Recent'  : 10,
       'Custom'  : 9,
@@ -70,8 +72,15 @@
     self.emoji.img_sets['facebook']['sheet'] = this.defaults.emojiSheets.facebook;
     self.emoji.img_sets['messenger']['sheet'] = this.defaults.emojiSheets.messenger;
 
+    // Emojis will be inserted with their unicode characters instead of using colon notation,
+    // therefore we need a separate EmojiConvertor instance, since the default one is used
+    // to populate the picker popup (which uses colons)
+    self.emojiUnicode = new EmojiConvertor();
+    self.emojiUnicode.replace_mode = 'unified';
+    self.emojiUnicode.allow_native = true;
+
     self.selector = selector;
-    self.elements = document.querySelectorAll(selector);
+    self.lastRangeIndex = 0;
 
     self.popup = document.querySelector('.wdt-emoji-popup');
     self.scroller = self.popup.querySelector('.wdt-emoji-scroll-wrapper');
@@ -124,22 +133,37 @@
 
     // a trick for contenteditable blur range clear
     self.ranges = {};
+    self.rangeSelections = {};
 
-    if (this.elements.length) {
-      for (var i = 0; i < self.elements.length; i++) {
-
-        var el = self.elements[i];
-
-        if (el.getAttribute('contenteditable')) {
-          el.dataset.rangeIndex = i;
-          wdtEmojiBundle.addRangeStore(el);
-        }
-
-        self.addPicker(self.elements[i]);
+    self.sectionLabels = {};
+    var tabs = self.popup.querySelectorAll('.wdt-emoji-tab');
+    if (tabs.length) {
+      for (var i = 0; i < tabs.length; i++) {
+        self.sectionLabels[tabs[i].dataset.groupName] =
+          tabs[i].dataset.label || tabs[i].dataset.groupName
       }
     }
 
     return self;
+  };
+
+  wdtEmojiBundle.initElements = function (elements) {
+    var self = this;
+
+    if (elements.length) {
+      for (var i = 0; i < elements.length; i++) {
+
+        var el = elements[i];
+
+        if (el.getAttribute('contenteditable')) {
+          el.dataset.rangeIndex = self.lastRangeIndex;
+          self.lastRangeIndex++;
+          wdtEmojiBundle.addRangeStore(el);
+        }
+
+        self.addPicker(el);
+      }
+    }
   };
 
   /**
@@ -152,9 +176,15 @@
       var p = document.createElement('div');
       addClass(p, 'wdt-emoji-picker');
 
-      p.innerHTML = self.emoji.replace_colons(':smile:');
+      p.innerHTML = self.defaults.iconOpenedHTML;
 
       p.addEventListener('click', wdtEmojiBundle.openPicker);
+
+      // After the popup is shown return control back to the element so the user so
+      // that it feels more natural
+      p.addEventListener('click', function () {
+        element.focus();
+      });
 
       var parent = element.parentNode;
       addClass(parent, 'wdt-emoji-picker-parent');
@@ -271,7 +301,7 @@
     wdtEmojiBundle.closePickers();
 
     addClass(this, 'wdt-emoji-picker-open');
-    this.innerHTML = wdtEmojiBundle.emoji.replace_colons(':sunglasses:');
+    this.innerHTML = wdtEmojiBundle.defaults.iconClosedHTML;
   };
 
   /**
@@ -320,7 +350,7 @@
             emojiTitle = document.createElement('h3'),
             emojiListDiv = document.createElement('div');
 
-          emojiTitle.innerHTML = title;
+          emojiTitle.innerHTML = self.sectionLabels[title];
           emojiTitle.dataset.emojiGroup = title;
           emojiListDiv.dataset.emojiGroup = title;
 
@@ -400,7 +430,7 @@
    */
   wdtEmojiBundle.closePicker = function (element) {
     removeClass(element, 'wdt-emoji-picker-open');
-    element.innerHTML = this.emoji.replace_colons(':smile:');
+    element.innerHTML = wdtEmojiBundle.defaults.iconOpenedHTML;
     var parent = findParent(element, 'wdt-emoji-picker-parent');
     if (wdtEmojiBundle.searchInput) {
       wdtEmojiBundle.searchInput.value = "";
@@ -645,7 +675,16 @@
   };
 
   /**
-   * A trick for contenteditable range clear on blur
+   * A trick for contenteditable range clear on blur. The idea is that this will work even
+   * when the contents of the element are replaced, by changing the value of innerHTML.
+   * For instance, Angular does that when using ng-bind-html.
+   *
+   * What we do is to save the "path" to the current selection, so that it can be restored
+   * from scratch when the user focuses the element.
+   *
+   * Apart from that, we store the start and end and set it every time the user focuses. This
+   * is a workaround for when an external agent changes the value of window.getSelection().getRangeAt(0).
+   * If we use use that element, since we only have a pointer to it, it will always be affected.
    * @param el
    */
   wdtEmojiBundle.addRangeStore = function (el) {
@@ -653,32 +692,41 @@
       var s = window.getSelection();
       if (!wdtEmojiBundle.ranges[this.dataset.rangeIndex]) {
         wdtEmojiBundle.ranges[this.dataset.rangeIndex] = new Range();
+        wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex] = {
+          start: 0,
+          end: 0,
+          path: []
+        };
       } else if (s.rangeCount > 0) {
+
+        var range = wdtEmojiBundle.ranges[this.dataset.rangeIndex];
+        var rangeSelection = wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex];
+
+        var node = findNodeFromPath(this, rangeSelection.path);
+        range.setStart(node, rangeSelection.start);
+        range.setEnd(node, rangeSelection.end);
+
         s.removeAllRanges();
-        s.addRange(wdtEmojiBundle.ranges[this.dataset.rangeIndex]);
+        s.addRange(range);
       }
     });
 
-    addListenerMulti(el, 'mouseup keyup', function () {
-      wdtEmojiBundle.ranges[this.dataset.rangeIndex] = window.getSelection().getRangeAt(0);
-    });
+    addListenerMulti(el, 'mouseup keyup input', function () {
+      var currentRange = window.getSelection().getRangeAt(0);
 
-    addListenerMulti(el, 'mousedown click', function (e) {
-      if (document.activeElement != this) {
-        if (e.stopPropagation) {
-          e.stopPropagation();
-        } else {
-          e.cancelBubble = true;
-        }
+      // If this happens, it means that an external agent has changed the selection
+      // without the user consent, therefore we want to ignore the event.
+      // An example of this happening is the use of ng-bind-html in Angular, which changes
+      // the current selection to the containing contenteditable element instead of the
+      // inner #text node and resets the position to 0.
+      if (currentRange.startContainer.nodeType !== Node.TEXT_NODE) return;
 
-        if (e.preventDefault) {
-          e.preventDefault();
-        } else {
-          e.returnValue = false;
-        }
+      wdtEmojiBundle.ranges[this.dataset.rangeIndex] = currentRange;
 
-        this.focus();
-      }
+      wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex].start = currentRange.startOffset;
+      wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex].end = currentRange.endOffset;
+      wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex].path =
+        selectedNodePath(currentRange.startContainer, this);
     });
   };
 
@@ -693,6 +741,64 @@
     for (var i = 0; i < events.length; i++) {
       el.addEventListener(events[i], cb, false);
     }
+  };
+
+  /**
+   * Returns an array describing the path in the DOM to go from startNode to node, each segment
+   * in the path represents the index of the child node to select next.
+   *
+   * @param node
+   * @param startNode
+   * @returns path
+   */
+  var selectedNodePath = function (node, startNode) {
+    var path = [];
+    var parent = node.parentNode;
+
+    while (!node.isEqualNode(startNode)) {
+      path.unshift(childNodeIndex(parent, node));
+
+      node = node.parentNode;
+      parent = parent.parentNode;
+    }
+
+    return path;
+  }
+
+  /**
+   * If node is a child of parent, returns the index in the parent's child nodes array.
+   * Otherwise returns -1 to indicate that node is not a child of parent
+   *
+   * @param parent
+   * @param node
+   * @returns index of node in parent's child nodes
+   */
+  var childNodeIndex = function (parent, node) {
+    for (i = 0; i < parent.childNodes.length; i++) {
+      if (parent.childNodes[i].isEqualNode(node)) {
+        return i;
+      }
+    }
+
+    return -1;
+  };
+
+  /**
+   * Traverse the DOM starting from startNode, following the described path
+   *
+   * @param startNode
+   * @param path
+   * @returns node
+   */
+  var findNodeFromPath = function (startNode, path) {
+    var node = startNode;
+    if (!path) return node;
+
+    for (i = 0; i < path.length; i++) {
+      node = node.childNodes[path[i]];
+    }
+
+    return node;
   };
 
   /**
@@ -840,7 +946,9 @@
    */
   var replaceText = function (el, selection, emo) {
     var val = el.value || el.innerHTML || '';
-    emo = emo + ' '; //append a space
+
+    // insert Unicode characters
+    emo = wdtEmojiBundle.emojiUnicode.replace_colons(emo);
 
     if (selection.ce) { // if contenteditable
       el.focus();
@@ -854,7 +962,7 @@
       el.selectionStart = el.selectionEnd = (textBefore.length + emo.length);
       el.focus();
     }
-  }; 
+  };
 
   /**
    * Fire custom events
