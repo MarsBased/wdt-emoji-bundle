@@ -213,7 +213,7 @@ body[data-wdt-emoji-bundle='apple'] .wdt-emoji[data-has-img-apple='false'] {
   height: 18px;
 }
 
-span.emoji {
+.wdt-emoji-popup span.emoji {
   display: -moz-inline-box;
   display: inline-block;
 
@@ -234,12 +234,12 @@ span.emoji {
   *display: inline;
 }
 
-span.emoji-sizer {
+.wdt-emoji-popup span.emoji-sizer {
   font-size: 1em;
   line-height: .81em;
 }
 
-span.emoji-outer {
+.wdt-emoji-popup span.emoji-outer {
   display: -moz-inline-box;
   display: inline-block;
 
@@ -252,7 +252,7 @@ span.emoji-outer {
   *display: inline;
 }
 
-span.emoji-inner {
+.wdt-emoji-popup span.emoji-inner {
   display: -moz-inline-box;
   display: inline-block;
 
@@ -266,7 +266,7 @@ span.emoji-inner {
   *zoom: 1;
 }
 
-img.emoji {
+.wdt-emoji-popup img.emoji {
   width: 1em;
   height: 1em;
 }
