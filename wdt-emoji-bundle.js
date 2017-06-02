@@ -690,19 +690,17 @@
   wdtEmojiBundle.addRangeStore = function (el) {
     el.addEventListener('focus', function () {
       var s = window.getSelection();
-      if (!wdtEmojiBundle.ranges[this.dataset.rangeIndex]) {
-        wdtEmojiBundle.ranges[this.dataset.rangeIndex] = new Range();
+      if (!wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex]) {
         wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex] = {
           start: 0,
           end: 0,
           path: []
         };
-      } else if (s.rangeCount > 0) {
-
-        var range = wdtEmojiBundle.ranges[this.dataset.rangeIndex];
+      } else {
         var rangeSelection = wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex];
-
         var node = findNodeFromPath(this, rangeSelection.path);
+        var range = new Range();
+
         range.setStart(node, rangeSelection.start);
         range.setEnd(node, rangeSelection.end);
 
@@ -720,8 +718,6 @@
       // the current selection to the containing contenteditable element instead of the
       // inner #text node and resets the position to 0.
       if (currentRange.startContainer.nodeType !== Node.TEXT_NODE) return;
-
-      wdtEmojiBundle.ranges[this.dataset.rangeIndex] = currentRange;
 
       wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex].start = currentRange.startOffset;
       wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex].end = currentRange.endOffset;
