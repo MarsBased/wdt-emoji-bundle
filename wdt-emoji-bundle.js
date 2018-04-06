@@ -121,7 +121,7 @@
 
     var symbols = self.popup.querySelector('[data-group-name="Symbols"]');
     if (symbols)
-        symbols.innerHTML = self.emoji.replace_colons(':heart:');
+        symbols.innerHTML = self.emoji.replace_colons(':hash:');
 
     var flags = self.popup.querySelector('[data-group-name="Flags"]');
     if (flags)
