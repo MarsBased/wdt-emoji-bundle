@@ -189,6 +189,22 @@
       var parent = element.parentNode;
       addClass(parent, 'wdt-emoji-picker-parent');
       parent.appendChild(p);
+
+      // This prevents the parent element from losing focus when clicking on the picker.
+      // We need to do it on mousedown because the click event comes after
+      // the blur event from the editor.
+      parent.addEventListener('mousedown', function(event) {
+        var target = event.target;
+
+        while (target && target !== this) {
+          if (target.matches('.wdt-emoji-picker')) {
+            event.preventDefault();
+            return;
+          }
+          target = target.parentNode;
+        }
+      });
+
       if (hasClass(element, 'wdt-emoji-open-on-colon')) {
         parent.addEventListener('keyup', wdtEmojiBundle.onKeyup)
       }
@@ -674,55 +690,22 @@
     return this.emoji.replace_colons(this.emoji.replace_emoticons(this.emoji.replace_unified(text)));
   };
 
-  /**
-   * A trick for contenteditable range clear on blur. The idea is that this will work even
-   * when the contents of the element are replaced, by changing the value of innerHTML.
-   * For instance, Angular does that when using ng-bind-html.
-   *
-   * What we do is to save the "path" to the current selection, so that it can be restored
-   * from scratch when the user focuses the element.
-   *
-   * Apart from that, we store the start and end and set it every time the user focuses. This
-   * is a workaround for when an external agent changes the value of window.getSelection().getRangeAt(0).
-   * If we use use that element, since we only have a pointer to it, it will always be affected.
-   * @param el
-   */
   wdtEmojiBundle.addRangeStore = function (el) {
-    el.addEventListener('focus', function () {
-      var s = window.getSelection();
-      if (!wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex]) {
-        wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex] = {
-          start: 0,
-          end: 0,
-          path: []
-        };
-      } else {
-        var rangeSelection = wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex];
-        var node = findNodeFromPath(this, rangeSelection.path);
-        var range = new Range();
+    el.addEventListener('blur', function() {
+      var currentRange = window.getSelection().getRangeAt(0);
+      if (currentRange.startContainer.nodeType !== Node.TEXT_NODE) return;
 
-        range.setStart(node, rangeSelection.start);
-        range.setEnd(node, rangeSelection.end);
+      wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex] = currentRange;
+    });
+
+    el.addEventListener('focus', function () {
+      var range = wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex];
+      if (range) {
+        var s = window.getSelection();
 
         s.removeAllRanges();
         s.addRange(range);
       }
-    });
-
-    addListenerMulti(el, 'mouseup keyup input', function () {
-      var currentRange = window.getSelection().getRangeAt(0);
-
-      // If this happens, it means that an external agent has changed the selection
-      // without the user consent, therefore we want to ignore the event.
-      // An example of this happening is the use of ng-bind-html in Angular, which changes
-      // the current selection to the containing contenteditable element instead of the
-      // inner #text node and resets the position to 0.
-      if (currentRange.startContainer.nodeType !== Node.TEXT_NODE) return;
-
-      wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex].start = currentRange.startOffset;
-      wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex].end = currentRange.endOffset;
-      wdtEmojiBundle.rangeSelections[this.dataset.rangeIndex].path =
-        selectedNodePath(currentRange.startContainer, this);
     });
   };
 
@@ -737,64 +720,6 @@
     for (var i = 0; i < events.length; i++) {
       el.addEventListener(events[i], cb, false);
     }
-  };
-
-  /**
-   * Returns an array describing the path in the DOM to go from startNode to node, each segment
-   * in the path represents the index of the child node to select next.
-   *
-   * @param node
-   * @param startNode
-   * @returns path
-   */
-  var selectedNodePath = function (node, startNode) {
-    var path = [];
-    var parent = node.parentNode;
-
-    while (!node.isEqualNode(startNode)) {
-      path.unshift(childNodeIndex(parent, node));
-
-      node = node.parentNode;
-      parent = parent.parentNode;
-    }
-
-    return path;
-  }
-
-  /**
-   * If node is a child of parent, returns the index in the parent's child nodes array.
-   * Otherwise returns -1 to indicate that node is not a child of parent
-   *
-   * @param parent
-   * @param node
-   * @returns index of node in parent's child nodes
-   */
-  var childNodeIndex = function (parent, node) {
-    for (i = 0; i < parent.childNodes.length; i++) {
-      if (parent.childNodes[i].isEqualNode(node)) {
-        return i;
-      }
-    }
-
-    return -1;
-  };
-
-  /**
-   * Traverse the DOM starting from startNode, following the described path
-   *
-   * @param startNode
-   * @param path
-   * @returns node
-   */
-  var findNodeFromPath = function (startNode, path) {
-    var node = startNode;
-    if (!path) return node;
-
-    for (i = 0; i < path.length; i++) {
-      node = node.childNodes[path[i]];
-    }
-
-    return node;
   };
 
   /**
