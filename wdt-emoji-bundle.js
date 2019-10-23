@@ -691,7 +691,7 @@
   };
 
   wdtEmojiBundle.addRangeStore = function (el) {
-    el.addEventListener('blur', function() {
+    addListenerMulti(el, 'mouseup keyup input', function () {
       var currentRange = window.getSelection().getRangeAt(0);
       if (currentRange.startContainer.nodeType !== Node.TEXT_NODE) return;
 
